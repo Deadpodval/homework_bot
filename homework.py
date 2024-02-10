@@ -100,9 +100,9 @@ def parse_status(homework: Dict):
     global ERROR_MESSAGES
     try:
         return (
-                'Изменился статус проверки работы '
-                f'"{homework["homework_name"]}"'
-                f'{HOMEWORK_VERDICTS[homework["status"]]}'
+            'Изменился статус проверки работы '
+            f'"{homework["homework_name"]}"'
+            f'{HOMEWORK_VERDICTS[homework["status"]]}'
         )
     except KeyError:
         logger.error('parse_status() function error')
@@ -112,7 +112,6 @@ def parse_status(homework: Dict):
 
 def main():
     """Основная логика работы бота."""
-
     logger.info('starting ...')
     check_tokens()
     bot = Bot(token=TELEGRAM_TOKEN)
