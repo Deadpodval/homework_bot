@@ -1,11 +1,11 @@
+import logging
 import os
 import time
-import logging
 from typing import Dict
+
 import requests
 from dotenv import load_dotenv
 from telegram import Bot
-
 
 load_dotenv()
 
