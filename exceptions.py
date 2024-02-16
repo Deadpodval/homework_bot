@@ -2,10 +2,6 @@ class EmptyAPIResponseError(Exception):
     pass
 
 
-class SendMessageError(Exception):
-    pass
-
-
 class ServerConnectionError(Exception):
     pass
 
@@ -17,5 +13,10 @@ class ParseStatusError(Exception):
 class GlobalException(Exception):
     pass
 
+
 class TokenNotFoundError(Exception):
+    pass
+
+
+class APIResponseError(Exception):
     pass

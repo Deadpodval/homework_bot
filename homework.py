@@ -1,6 +1,9 @@
 import logging
 import os
 import time
+
+import telegram
+
 import exceptions
 from typing import Dict
 
@@ -21,7 +24,7 @@ TOKENS = {
 }
 
 RETRY_PERIOD = 600
-CHECK_PERIOD = 259200  # ~ 72 hours
+CHECK_PERIOD = 259200 * 300  # ~ 72 hours
 STATUS_OK = 200
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
@@ -62,8 +65,8 @@ def send_message(bot: Bot, message) -> None:
             text=message,
             chat_id=TELEGRAM_CHAT_ID)
         logger.debug('message sent')
-    except exceptions.SendMessageError as error:
-        logger.error('send_message() function error: %s', error)
+    except telegram.TelegramError as error:
+        logger.error('Failed to send message: %s', error.message)
 
 
 def get_api_answer(timestamp) -> Dict:
@@ -71,16 +74,14 @@ def get_api_answer(timestamp) -> Dict:
     payload = {'from_date': timestamp}
     try:
         response = requests.get(ENDPOINT, headers=HEADERS, params=payload)
-        if response.status_code != STATUS_OK:
-            err_data = {
-                'status_code': response.status_code,
-                'headers': HEADERS,
-                'payload': payload
-            }
-            logger.error('Failed connection. Response code: %s', err_data)
-            raise exceptions.ServerConnectionError
-        else:
+        if response.status_code == 200:
+            logger.debug('Response: OK')
             return response.json()
+        logger.error(
+            'API can not reach ENDPOINT with args: %s',
+            ' '.join([timestamp, HEADERS])
+        )
+        raise exceptions.EmptyAPIResponseError
     except requests.RequestException as error:
         logger.error(error.args)
 
@@ -88,45 +89,34 @@ def get_api_answer(timestamp) -> Dict:
 def check_response(response) -> None:
     """Проверка ответа от сервера."""
     if not isinstance(response, dict):
-        logger.error('Unexpected data in check_response()')
-        raise TypeError('Unexpected data in check_response()')
+        raise TypeError
     if not isinstance(response.get('homeworks'), list):
-        logger.error('"homeworks" does not contain list')
-        raise TypeError('"homeworks" does not contain list')
+        raise TypeError
     if 'current_date' not in response.keys():
-        logger.error('"current_date" not in response')
-        raise TypeError('key "current_date" not in response')
+        raise TypeError
 
 
 def parse_status(homework: Dict) -> str:
     """Поиск статуса отдельной работы."""
-    try:
-        homework_name = homework.get('homework_name')
-        homework_status = homework.get('status')
-        status_answer = HOMEWORK_VERDICTS.get(homework_status)
-        if not homework_name or not status_answer:
-            logger.error('parse_status() income data error')
-            raise exceptions.ParseStatusError
-        else:
-            HISTORY[homework_name] = status_answer
-            return (
-                f'Изменился статус проверки работы '
-                f'"{homework_name}"'
-                f'{status_answer}'
-            )
-
-    except exceptions.ParseStatusError:
-        logger.error('parse_status() function error')
-        raise KeyError(homework.get('name'))
+    homework_name = homework.get('homework_name')
+    homework_status = homework.get('status')
+    status_answer = HOMEWORK_VERDICTS.get(homework_status)
+    if not homework_name or not status_answer:
+        logger.error('parse_status() income data error')
+        raise exceptions.ParseStatusError
+    HISTORY[homework_name] = status_answer
+    return (
+        f'Изменился статус проверки работы '
+        f'"{homework_name}"'
+        f'{status_answer}'
+    )
 
 
 def main():
     """Основная логика работы бота."""
-    logger.info('starting ...')
-    token_check = check_tokens()
-    if not token_check:
-        logger.critical('shutting down...')
-        raise exceptions.TokenNotFoundError
+    tokens_check = check_tokens()
+    if not tokens_check:
+        raise exceptions.TokenNotFoundError()
     bot = Bot(token=TELEGRAM_TOKEN)
     timestamp = int(time.time()) - CHECK_PERIOD
 
@@ -137,23 +127,20 @@ def main():
             homeworks = response.get('homeworks')
             for homework in homeworks:
                 homework_name = homework.get('homework_name')
-                homework_status = homework.get('status')
-                current_status = HOMEWORK_VERDICTS[homework_status]
+                homework_status = HOMEWORK_VERDICTS[homework.get('status')]
                 history_status = HISTORY.get(homework_name)
-                if current_status:
-                    message = parse_status(homework)
-                    if history_status != current_status:
-                        send_message(bot, message)
-                        logger.debug('message sent')
-                    else:
-                        logger.debug('no updates')
-        except exceptions.GlobalException as error:
-            logger.critical('Failed main() function %s', error.args)
-            try:
-                send_message(bot, error)
-                logger.debug('message sent')
-            except exceptions.SendMessageError:
-                logger.error('Send message error')
+                if history_status != homework_status:
+                    send_message(bot, parse_status(homework))
+                else:
+                    logger.debug('No updates')
+        except exceptions.EmptyAPIResponseError:
+            send_message(bot, 'API вернул пустой ответ')
+        except TypeError:
+            send_message(bot, 'API вернул неправильный ответ')
+        except requests.RequestException:
+            send_message(bot, 'Произошла ошибка запроса')
+        except exceptions.ParseStatusError:
+            send_message(bot, 'Ошибка расшифровки статуса')
 
         time.sleep(RETRY_PERIOD)
 
