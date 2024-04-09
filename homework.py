@@ -24,7 +24,7 @@ TOKENS = {
 }
 
 RETRY_PERIOD = 600
-CHECK_PERIOD = 259200 * 300  # ~ 72 hours
+CHECK_PERIOD = 259200 * 3  # ~ 72 hours
 STATUS_OK = 200
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
@@ -40,7 +40,7 @@ HISTORY = {}
 logger = logging.getLogger('telegram-bot-logger')
 logger.setLevel(logging.DEBUG)
 
-log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+log_format = '%(asctime)s - %(levelname)s - %(message)s'
 log_formatter = logging.Formatter(log_format, style='%')
 
 stream_handler = logging.StreamHandler()
@@ -79,11 +79,11 @@ def get_api_answer(timestamp) -> Dict:
             return response.json()
         logger.error(
             'API can not reach ENDPOINT with args: %s',
-            ' '.join([timestamp, HEADERS])
+            str(timestamp)
         )
         raise exceptions.EmptyAPIResponseError
     except requests.RequestException as error:
-        logger.error(error.args)
+        logger.error('get_api_answer() error %s', error.args)
 
 
 def check_response(response) -> None:
@@ -107,7 +107,7 @@ def parse_status(homework: Dict) -> str:
     HISTORY[homework_name] = status_answer
     return (
         f'Изменился статус проверки работы '
-        f'"{homework_name}"'
+        f'"{homework_name}"\n'
         f'{status_answer}'
     )
 
