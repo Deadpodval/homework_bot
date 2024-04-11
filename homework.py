@@ -1,15 +1,15 @@
 import logging
 import os
+import sys
 import time
-
-import telegram
-
-import exceptions
 from typing import Dict
 
 import requests
+import telegram
 from dotenv import load_dotenv
 from telegram import Bot
+
+import exceptions
 
 load_dotenv()
 
@@ -18,13 +18,13 @@ TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
 TOKENS = {
-    'PRACTICUM_TOKEN': PRACTICUM_TOKEN,
-    'TELEGRAM_TOKEN': TELEGRAM_TOKEN,
-    'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID
+    'PRACTICUM_TOKEN': PRACTICUM_TOKEN or None,
+    'TELEGRAM_TOKEN': TELEGRAM_TOKEN or None,
+    'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID or None
 }
 
-RETRY_PERIOD = 600
-CHECK_PERIOD = 259200 * 3  # ~ 72 hours
+RETRY_PERIOD = 600  # 10 minutes
+CHECK_PERIOD = 259200 * 3
 STATUS_OK = 200
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
@@ -35,7 +35,7 @@ HOMEWORK_VERDICTS = {
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
 
-HISTORY = {}
+HISTORY: dict = {}
 
 logger = logging.getLogger('telegram-bot-logger')
 logger.setLevel(logging.DEBUG)
@@ -43,7 +43,7 @@ logger.setLevel(logging.DEBUG)
 log_format = '%(asctime)s - %(levelname)s - %(message)s'
 log_formatter = logging.Formatter(log_format, style='%')
 
-stream_handler = logging.StreamHandler()
+stream_handler = logging.StreamHandler(stream=sys.stdout)
 stream_handler.setFormatter(log_formatter)
 
 logger.addHandler(stream_handler)
@@ -51,11 +51,7 @@ logger.addHandler(stream_handler)
 
 def check_tokens() -> bool:
     """Проверка токенов на наличие."""
-    for token in TOKENS:
-        if TOKENS[token] is None:
-            logger.critical('Token not found: %s', token)
-            return False
-    return True
+    return all((PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID))
 
 
 def send_message(bot: Bot, message) -> None:
@@ -64,9 +60,9 @@ def send_message(bot: Bot, message) -> None:
         bot.send_message(
             text=message,
             chat_id=TELEGRAM_CHAT_ID)
-        logger.debug('message sent')
-    except telegram.TelegramError as error:
-        logger.error('Failed to send message: %s', error.message)
+        logger.debug('Message sent')
+    except telegram.error.TelegramError as error:
+        raise telegram.error.TelegramError(f'Failed to send message {error}')
 
 
 def get_api_answer(timestamp) -> Dict:
@@ -116,11 +112,13 @@ def main():
     """Основная логика работы бота."""
     tokens_check = check_tokens()
     if not tokens_check:
+        logger.critical('Tokens not found')
         raise exceptions.TokenNotFoundError()
     bot = Bot(token=TELEGRAM_TOKEN)
     timestamp = int(time.time()) - CHECK_PERIOD
 
     while True:
+        message: str = ''
         try:
             response = get_api_answer(timestamp)
             check_response(response)
@@ -130,18 +128,22 @@ def main():
                 homework_status = HOMEWORK_VERDICTS[homework.get('status')]
                 history_status = HISTORY.get(homework_name)
                 if history_status != homework_status:
-                    send_message(bot, parse_status(homework))
+                    message = parse_status(homework)
                 else:
                     logger.debug('No updates')
         except exceptions.EmptyAPIResponseError:
-            send_message(bot, 'API вернул пустой ответ')
+            message = 'API вернул пустой ответ'
         except TypeError:
-            send_message(bot, 'API вернул неправильный ответ')
+            message = 'API вернул неправильный ответ'
         except requests.RequestException:
-            send_message(bot, 'Произошла ошибка запроса')
+            message = 'Произошла ошибка запроса'
         except exceptions.ParseStatusError:
-            send_message(bot, 'Ошибка расшифровки статуса')
-
+            message = 'Ошибка расшифровки статуса'
+        try:
+            send_message(bot, message)
+        except telegram.error.TelegramError as error:
+            logger.error('Failed to send message %s', error)
+        
         time.sleep(RETRY_PERIOD)
 
 
