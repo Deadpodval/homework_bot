@@ -108,6 +108,27 @@ def parse_status(homework: Dict) -> str:
     )
 
 
+def history_status_check(homework):
+    """Возвращает результат проверки статуса на обновления."""
+    homework_name = homework.get('homework_name')
+    homework_status = HOMEWORK_VERDICTS[homework.get('status')]
+    history_status = HISTORY.get(homework_name)
+    if history_status != homework_status:
+        return parse_status(homework)
+    logger.debug('No updates')
+    return ''
+
+
+def try_send_message(bot, message):
+    """Предпринимает попытку отправки сообщения.
+    Логирует неудачную отправку.
+    """
+    try:
+        send_message(bot, message)
+    except (telegram.error.TelegramError, SystemExit) as error:
+        logger.error('Failed to send message %s', error)
+
+
 def main():
     """Основная логика работы бота."""
     tokens_check = check_tokens()
@@ -124,13 +145,7 @@ def main():
             check_response(response)
             homeworks = response.get('homeworks')
             for homework in homeworks:
-                homework_name = homework.get('homework_name')
-                homework_status = HOMEWORK_VERDICTS[homework.get('status')]
-                history_status = HISTORY.get(homework_name)
-                if history_status != homework_status:
-                    message = parse_status(homework)
-                else:
-                    logger.debug('No updates')
+                message = history_status_check(homework)
         except exceptions.EmptyAPIResponseError:
             message = 'API вернул пустой ответ'
         except TypeError:
@@ -139,10 +154,7 @@ def main():
             message = 'Произошла ошибка запроса'
         except exceptions.ParseStatusError:
             message = 'Ошибка расшифровки статуса'
-        try:
-            send_message(bot, message)
-        except (telegram.error.TelegramError, SystemExit) as error:
-            logger.error('Failed to send message %s', error)
+        try_send_message(bot, message)
         time.sleep(RETRY_PERIOD)
 
 
