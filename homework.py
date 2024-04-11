@@ -141,9 +141,9 @@ def main():
             message = 'Ошибка расшифровки статуса'
         try:
             send_message(bot, message)
-        except telegram.error.TelegramError as error:
+        except (telegram.error.TelegramError, SystemExit) as error:
             logger.error('Failed to send message %s', error)
-        
+
         time.sleep(RETRY_PERIOD)
 
 
