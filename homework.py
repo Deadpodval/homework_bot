@@ -143,7 +143,6 @@ def main():
             send_message(bot, message)
         except (telegram.error.TelegramError, SystemExit) as error:
             logger.error('Failed to send message %s', error)
-
         time.sleep(RETRY_PERIOD)
 
 
