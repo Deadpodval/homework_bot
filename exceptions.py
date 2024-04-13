@@ -20,3 +20,6 @@ class TokenNotFoundError(Exception):
 
 class APIResponseError(Exception):
     pass
+
+class FailedToSendMessageError(Exception):
+    pass

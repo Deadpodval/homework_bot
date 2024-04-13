@@ -2,6 +2,7 @@ import logging
 import os
 import sys
 import time
+from http import HTTPStatus
 from typing import Dict
 
 import requests
@@ -17,15 +18,8 @@ PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
-TOKENS = {
-    'PRACTICUM_TOKEN': PRACTICUM_TOKEN or None,
-    'TELEGRAM_TOKEN': TELEGRAM_TOKEN or None,
-    'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID or None
-}
-
 RETRY_PERIOD = 600  # 10 minutes
 CHECK_PERIOD = 259200 * 3
-STATUS_OK = 200
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 
@@ -35,7 +29,7 @@ HOMEWORK_VERDICTS = {
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
 
-HISTORY: dict = {}
+HISTORY: dict = {str: str}
 
 logger = logging.getLogger('telegram-bot-logger')
 logger.setLevel(logging.DEBUG)
@@ -62,7 +56,7 @@ def send_message(bot: Bot, message) -> None:
             chat_id=TELEGRAM_CHAT_ID)
         logger.debug('Message sent')
     except telegram.error.TelegramError as error:
-        raise telegram.error.TelegramError(f'Failed to send message {error}')
+        raise exceptions.FailedToSendMessageError(error)
 
 
 def get_api_answer(timestamp) -> Dict:
@@ -70,12 +64,14 @@ def get_api_answer(timestamp) -> Dict:
     payload = {'from_date': timestamp}
     try:
         response = requests.get(ENDPOINT, headers=HEADERS, params=payload)
-        if response.status_code == 200:
+        if response.status_code == HTTPStatus.OK:
             logger.debug('Response: OK')
             return response.json()
         logger.error(
-            'API can not reach ENDPOINT with args: %s',
-            str(timestamp)
+            'API can not reach ENDPOINT with args: %s, %s, %s',
+            payload,
+            ENDPOINT,
+            HEADERS
         )
         raise exceptions.EmptyAPIResponseError
     except requests.RequestException as error:
@@ -85,11 +81,11 @@ def get_api_answer(timestamp) -> Dict:
 def check_response(response) -> None:
     """Проверка ответа от сервера."""
     if not isinstance(response, dict):
-        raise TypeError
+        raise TypeError('response is not Dict type')
     if not isinstance(response.get('homeworks'), list):
-        raise TypeError
-    if 'current_date' not in response.keys():
-        raise TypeError
+        raise TypeError('"homeworks" in response is not List type')
+    if 'current_date' not in response:
+        raise TypeError('key "current_date" not in response')
 
 
 def parse_status(homework: Dict) -> str:
@@ -102,7 +98,7 @@ def parse_status(homework: Dict) -> str:
         raise exceptions.ParseStatusError
     HISTORY[homework_name] = status_answer
     return (
-        f'Изменился статус проверки работы '
+        'Изменился статус проверки работы '
         f'"{homework_name}"\n'
         f'{status_answer}'
     )
@@ -111,7 +107,7 @@ def parse_status(homework: Dict) -> str:
 def history_status_check(homework):
     """Возвращает результат проверки статуса на обновления."""
     homework_name = homework.get('homework_name')
-    homework_status = HOMEWORK_VERDICTS[homework.get('status')]
+    homework_status = HOMEWORK_VERDICTS.get(homework.get('status'))
     history_status = HISTORY.get(homework_name)
     if history_status != homework_status:
         return parse_status(homework)
@@ -125,7 +121,7 @@ def try_send_message(bot, message):
     """
     try:
         send_message(bot, message)
-    except (telegram.error.TelegramError, SystemExit) as error:
+    except (exceptions.FailedToSendMessageError, SystemExit) as error:
         logger.error('Failed to send message %s', error)
 
 
@@ -154,8 +150,9 @@ def main():
             message = 'Произошла ошибка запроса'
         except exceptions.ParseStatusError:
             message = 'Ошибка расшифровки статуса'
-        try_send_message(bot, message)
-        time.sleep(RETRY_PERIOD)
+        finally:
+            try_send_message(bot, message)
+            time.sleep(RETRY_PERIOD)
 
 
 if __name__ == '__main__':
