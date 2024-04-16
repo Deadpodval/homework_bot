@@ -45,9 +45,6 @@ logger.addHandler(stream_handler)
 
 def check_tokens() -> bool:
     """Проверка токенов на наличие."""
-    # Объявление коллекции вне функции ломает код
-    # Вообще так и не понял в чём смысл такой конструкции
-    # В сообщении в пачке описал проблему, но вы не читаете
     tokens = {
         'PRACTICUM_TOKEN': PRACTICUM_TOKEN,
         'TELEGRAM_TOKEN': TELEGRAM_TOKEN,
@@ -55,6 +52,7 @@ def check_tokens() -> bool:
     }
     for token in tokens:
         if tokens[token] is None:
+            logger.critical('Token %s not found', token)
             return False
     return True
 
