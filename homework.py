@@ -29,7 +29,7 @@ HOMEWORK_VERDICTS = {
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
 
-HISTORY: dict = {str: str}
+HISTORY: Dict[str, str] = {}
 
 logger = logging.getLogger('telegram-bot-logger')
 logger.setLevel(logging.DEBUG)
@@ -45,7 +45,18 @@ logger.addHandler(stream_handler)
 
 def check_tokens() -> bool:
     """Проверка токенов на наличие."""
-    return all((PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID))
+    # Объявление коллекции вне функции ломает код
+    # Вообще так и не понял в чём смысл такой конструкции
+    # В сообщении в пачке описал проблему, но вы не читаете
+    tokens = {
+        'PRACTICUM_TOKEN': PRACTICUM_TOKEN,
+        'TELEGRAM_TOKEN': TELEGRAM_TOKEN,
+        'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID,
+    }
+    for token in tokens:
+        if tokens[token] is None:
+            return False
+    return True
 
 
 def send_message(bot: Bot, message) -> None:
@@ -127,8 +138,7 @@ def try_send_message(bot, message):
 
 def main():
     """Основная логика работы бота."""
-    tokens_check = check_tokens()
-    if not tokens_check:
+    if not check_tokens():
         logger.critical('Tokens not found')
         raise exceptions.TokenNotFoundError()
     bot = Bot(token=TELEGRAM_TOKEN)
